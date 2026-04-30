@@ -3,7 +3,7 @@
 -- ==========================================
 
 -- 1. Ice Dagger (Very fast attack, lower damage)
-minetest.register_tool("mymod:ice_dagger", {
+minetest.register_tool("techblox:ice_dagger", {
     description = "Ice Dagger",
     inventory_image = "ice_dagger.png", -- Replace with your friend's exact texture name
     tool_capabilities = {
@@ -18,7 +18,7 @@ minetest.register_tool("mymod:ice_dagger", {
 })
 
 -- 2. Ice Sword (Standard speed, good damage)
-minetest.register_tool("mymod:ice_sword", {
+minetest.register_tool("techblox:ice_sword", {
     description = "Ice Sword",
     inventory_image = "ice_sword.png", -- Replace with your friend's exact texture name
     tool_capabilities = {
@@ -33,7 +33,7 @@ minetest.register_tool("mymod:ice_sword", {
 })
 
 -- 3. Ice Scythe (Slow attack, high damage, can chop plants)
-minetest.register_tool("mymod:ice_scythe", {
+minetest.register_tool("techblox:ice_scythe", {
     description = "Ice Scythe",
     inventory_image = "ice_scythe.png", -- Replace with your friend's exact texture name
     tool_capabilities = {
@@ -49,7 +49,7 @@ minetest.register_tool("mymod:ice_scythe", {
 })
 
 -- 4. Ice Bow (Basic item registration)
-minetest.register_tool("mymod:ice_bow", {
+minetest.register_tool("techblox:ice_bow", {
     description = "Ice Bow",
     inventory_image = "ice_bow.png", -- Replace with your friend's exact texture name
     -- Bows require extra logic to actually shoot, see note below!
