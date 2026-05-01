@@ -1,49 +1,62 @@
 -- Register the Totem Item
 minetest.register_craftitem("techblox:totem_of_undying", {
     description = "Techblox Totem of Undying\nPrevents death when held in inventory",
-    inventory_image = "techblox_totem.png", -- Ensure you have this texture
+    inventory_image = "techblox_totem.png",
     stack_max = 1,
 })
 
 -- Death Prevention Logic
 minetest.register_on_player_hpchange(function(player, hp_change, reason)
-    -- Only trigger if the damage is enough to kill the player
+    -- 1. Only trigger if the change is DAMAGE (negative)
+    if hp_change >= 0 then 
+        return hp_change 
+    end
+
     local current_hp = player:get_hp()
+    
+    -- 2. Check if the damage will kill the player
     if current_hp + hp_change <= 0 then
         local inv = player:get_inventory()
         
-        -- Check if the player has the totem in their main inventory
+        -- 3. Check if totem is in the 'main' inventory
         if inv:contains_item("main", "techblox:totem_of_undying") then
             
-            -- 1. Remove one totem
+            -- Remove one totem
             inv:remove_item("main", "techblox:totem_of_undying")
             
-            -- 2. Play a sound and add particles for the "Save" effect
+            -- Sound and Burst Particles
             local pos = player:get_pos()
-            minetest.sound_play("default_recharge", {pos = pos, gain = 1.0})
+            minetest.sound_play("default_recharge", {pos = pos, gain = 1.0, max_hear_distance = 16})
             
             minetest.add_particlespawner({
-                amount = 50,
-                time = 0.5,
-                minpos = {x = pos.x - 1, y = pos.y, z = pos.z - 1},
-                maxpos = {x = pos.x + 1, y = pos.y + 2, z = pos.z + 1},
-                minvel = {x = -1, y = 2, z = -1},
-                maxvel = {x = 1, y = 5, z = 1},
-                texture = "techblox_totem_particle.png", -- Small sparkle or totem icon
+                amount = 60,
+                time = 0.1, -- Explode almost instantly
+                minpos = {x = pos.x - 0.5, y = pos.y + 1, z = pos.z - 0.5},
+                maxpos = {x = pos.x + 0.5, y = pos.y + 1.5, z = pos.z + 0.5},
+                minvel = {x = -4, y = 2, z = -4},
+                maxvel = {x = 4, y = 6, z = 4},
+                minacc = {x = 0, y = -9.8, z = 0}, -- Gravity makes shards fall
+                maxacc = {x = 0, y = -9.8, z = 0},
+                minexptime = 1,
+                maxexptime = 2,
+                minsize = 1,
+                maxsize = 3,
+                texture = "techblox_totem_particle.png",
+                glow = 14,
             })
 
-            -- 3. Heal the player to full (usually 20)
-            player:set_hp(player:get_properties().hp_max)
+            -- 4. Set HP to max (prevents the 'Death' state)
+            local hp_max = player:get_properties().hp_max or 20
+            player:set_hp(hp_max)
             
-            -- 4. Inform the player
+            -- 5. HUD Feedback
             minetest.chat_send_player(player:get_player_name(), 
-                "*** THE TOTEM SAVED YOU! ***")
+                " \n[Techblox] YOUR TOTEM HAS BEEN CONSUMED!\n ")
 
-            -- Return 0 to cancel the original fatal damage
+            -- 6. CRITICAL: Return 0 to cancel the fatal damage
             return 0
         end
     end
     
-    -- Otherwise, proceed with normal damage
     return hp_change
-end, true) -- The 'true' modifier makes this a modifier function
+end, true)
