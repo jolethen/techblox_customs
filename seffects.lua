@@ -1,27 +1,30 @@
--- Techblox MMO: Sword Slash VFX v1.4
--- Fixed: Fallback syntax and Air-swing triggers
+-- Techblox MMO: Sword Slash VFX v1.5
+-- Changes: Increased distance, front-only generation, removed fallback string
 
 local function play_techblox_vfx(itemstack, user)
     local pos = user:get_pos()
     local dir = user:get_look_dir()
     
-    -- Position slightly in front of the player
+    -- 1. DISTANCE FIX: Increased multiplier from 1.2 to 2.5. 
+    -- This moves the slash further away from the initiator's body.
     local spawn_pos = {
-        x = pos.x + dir.x * 1.2,
-        y = pos.y + 1.5 + dir.y * 1.2,
-        z = pos.z + dir.z * 1.2
+        x = pos.x + dir.x * 2.5,
+        y = pos.y + 1.5 + dir.y * 2.5,
+        z = pos.z + dir.z * 2.5
     }
 
-    -- FIXED TEXTURE STRING:
-    -- We use a simpler colorized fallback to avoid the "Invalid modification" error.
-    local effect_texture = "techblox_slash.png^[fallback:default_cloud.png^[colorize:#00ffff:150"
+    -- 2. FRONT-ONLY & ERROR FIX: Removed the ^[fallback string.
+    -- This assumes techblox_slash.png exists in Techblox/textures/.
+    -- If the file is missing, Luanti will show a dummy 'unknown' texture 
+    -- instead of crashing or spamming the red error log.
+    local effect_texture = "techblox_slash.png"
 
     minetest.add_particle({
         pos = spawn_pos,
-        velocity = user:get_player_velocity(), -- Inherit player speed so it doesn't lag behind
+        velocity = user:get_player_velocity(), -- Moves with the player
         acceleration = {x=0, y=0, z=0},
-        expirationtime = 0.15, 
-        size = 30, 
+        expirationtime = 0.2, -- Slightly longer to see the detail
+        size = 32, 
         collisiondetection = false,
         vertical = true, 
         texture = effect_texture,
@@ -41,7 +44,7 @@ minetest.register_tool("techblox:steel_sword_fx", {
         damage_groups = {fleshy=6},
     },
 
-    -- Triggers when hitting something
+    -- Triggers on hit (targets blocks or players)
     on_use = function(itemstack, user, pointed_thing)
         play_techblox_vfx(itemstack, user)
         
@@ -55,14 +58,14 @@ minetest.register_tool("techblox:steel_sword_fx", {
         return itemstack
     end,
 
-    -- Triggers when tapping the air (Mobile/PC)
+    -- Triggers on "Tap" / Air click
     on_secondary_use = function(itemstack, user, pointed_thing)
         play_techblox_vfx(itemstack, user)
         return itemstack
     end,
 })
 
--- Safe Crafting for Techblox
+-- Techblox Crafting
 if minetest.get_modpath("default") then
     minetest.register_craft({
         output = "techblox:steel_sword_fx",
@@ -74,4 +77,4 @@ if minetest.get_modpath("default") then
     })
 end
 
-minetest.log("action", "[Techblox] Fixed Sword VFX Loaded!")
+minetest.log("action", "[Techblox] v1.5 VFX Loaded - Front-facing enabled.")
