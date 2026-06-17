@@ -1,7 +1,7 @@
 -- ==========================================================================
 -- TECHBLOX EARTH WANDS COMPONENT
 -- Features: 3 Tiers, Progressive Building, Anti-Lag, Anti-Duplication,
---           EXACT Texture Matching (Dynamic Node Facades), Fail-Safe Nil Checks.
+--           EXACT Texture Matching via Visual Swaps, and Fail-Safe Nil Checks.
 -- ==========================================================================
 
 -- Safe generic sounds to replace minetest.node_sound_stone_defaults() crash
@@ -11,52 +11,17 @@ local safe_stone_sounds = {
     place = {name = "default_place_node", gain = 0.5},
 }
 
--- 1. REGISTER THE BASE FALLBACK UNBREAKABLE PLATFORM NODE
+-- 1. REGISTER THE SINGLE BASE PLATFORM NODE
 minetest.register_node("techblox:magic_stone", {
     description = "Magic Earth Stone",
-    tiles = {"default_stone.png"}, 
-    groups = {immobile = 1},       
-    diggable = false,              -- Absolute dupe protection
+    tiles = {"default_stone.png"}, -- Fallback base texture
+    groups = {immobile = 1},       -- Custom non-diggable group
+    diggable = false,              -- Absolute protection against duplication exploits
     floodable = false,
     sounds = safe_stone_sounds,
 })
 
--- 2. DYNAMIC REGISTRY: GENERATE UNBREAKABLE CLONES OF ALL KNOWN NODES AT STARTUP
-local facade_registry = {}
-
-minetest.register_on_mods_loaded(function()
-    for node_name, def in pairs(minetest.registered_nodes) do
-        -- Deep safety nil checks for broken node entries
-        if def and type(def) == "table" and def.tiles and type(def.tiles) == "table" and node_name ~= "air" and node_name ~= "ignore" then
-            
-            -- RIGID STRIP FIX: Force everything to lowercase and delete ALL symbols/underscores.
-            -- This changes "moreblocks:panel_brick_4" into "moreblockspanelbrick4"
-            -- Outfits a 100% legal node string: "techblox:magic_moreblockspanelbrick4"
-            local ultra_clean = node_name:lower():gsub("[^a-z0-9]", "")
-            local facade_name = "techblox:magic_" .. ultra_clean
-            
-            -- Make sure it hasn't somehow already been registered to avoid duplicate entries
-            if not minetest.registered_nodes[facade_name] then
-                -- Clone original visuals but strip out all drops, mining groups, and diggability
-                minetest.register_node(facade_name, {
-                    description = "Magic " .. (def.description or "Stone"),
-                    tiles = def.tiles, -- EXACT texture match
-                    drawtype = def.drawtype or "normal",
-                    paramtype = def.paramtype,
-                    paramtype2 = def.paramtype2,
-                    groups = {immobile = 1},
-                    diggable = false, -- Locked down so players cannot break or dupe it
-                    floodable = false,
-                    sounds = safe_stone_sounds,
-                })
-                
-                facade_registry[node_name] = facade_name
-            end
-        end
-    end
-end)
-
--- 3. WAND CONFIGURATION TUNING (THE THREE TIERS)
+-- 2. WAND CONFIGURATION TUNING (THE THREE TIERS)
 local wand_tiers = {
     [1] = {
         name = "techblox:earth_wand_t1",
@@ -81,9 +46,9 @@ local wand_tiers = {
     },
 }
 
--- 4. LAG-FREE STAGGERED GENERATION LAYER FUNCTION
-local function build_platform_layer(pos, width, current_layer, max_height, facade_node)
-    if not pos or not pos.y then return end
+-- 3. LAG-FREE STAGGERED GENERATION LAYER FUNCTION WITH VISUAL SWAPPING
+local function build_platform_layer(pos, width, current_layer, max_height, source_node_name)
+    if not pos or not pos.y or not source_node_name then return end
     if current_layer > max_height then return end
 
     local center_y = pos.y + current_layer
@@ -96,14 +61,28 @@ local function build_platform_layer(pos, width, current_layer, max_height, facad
         max_offset = math.floor(width / 2)
     end
 
+    -- Fetch the actual source node definition map dynamically safely
+    local def = minetest.registered_nodes[source_node_name]
+    if not def or not def.tiles then return end
+
     for dx = min_offset, max_offset do
         for dz = min_offset, max_offset do
             local target_pos = {x = pos.x + dx, y = center_y, z = pos.z + dz}
             local node = minetest.get_node_or_nil(target_pos)
             
             if node and (node.name == "air" or node.name == "default:water_source" or node.name == "default:water_flowing") then
-                -- Places the EXACT custom texture matched facade node
-                minetest.set_node(target_pos, {name = facade_node})
+                -- Step A: Place our single unbreakable node identity physically down
+                minetest.set_node(target_pos, {name = "techblox:magic_stone"})
+                
+                -- Step B: Force swap the visual properties to mirror the exact source block textures
+                -- This copies top, bottom, and side textures seamlessly along with the original shape drawtype
+                minetest.swap_node(target_pos, {
+                    name = "techblox:magic_stone",
+                    tiles = def.tiles,
+                    drawtype = def.drawtype or "normal",
+                    paramtype = def.paramtype,
+                    paramtype2 = def.paramtype2,
+                })
             end
         end
     end
@@ -111,11 +90,11 @@ local function build_platform_layer(pos, width, current_layer, max_height, facad
     -- Play placement audio feedback safely
     minetest.sound_play("default_cool_lava", {pos = pos, gain = 0.3, max_hear_distance = 12}, true)
 
-    -- Stagger next layer execution by 0.15 seconds to completely eliminate server tick lag
-    minetest.after(0.15, build_platform_layer, pos, width, current_layer + 1, max_height, facade_node)
+    -- Stagger next layer execution by 0.15 seconds to eliminate engine tick lag entirely
+    minetest.after(0.15, build_platform_layer, pos, width, current_layer + 1, max_height, source_node_name)
 end
 
--- 5. REGISTRATION LOOP FOR THE WANDS
+-- 4. REGISTRATION LOOP FOR THE WANDS
 for tier, data in ipairs(wand_tiers) do
     minetest.register_tool(data.name, {
         description = data.description,
@@ -139,13 +118,12 @@ for tier, data in ipairs(wand_tiers) do
                 return itemstack 
             end
             
-            -- Find the exact facade node from our registry map, fall back to default magic stone if missing
-            local facade_node = facade_registry[clicked_node.name] or "techblox:magic_stone"
-            
+            -- Keep a clean record of the exact clicked block name string (e.g. "default:diamond_block")
+            local source_node_name = clicked_node.name
             local start_pos = {x = clicked_pos.x, y = clicked_pos.y, z = clicked_pos.z}
             
-            -- Run builder with the target texture facade
-            build_platform_layer(start_pos, data.width, 1, data.height, facade_node)
+            -- Launch building sequence passing the target name string downward
+            build_platform_layer(start_pos, data.width, 1, data.height, source_node_name)
             
             if itemstack and type(itemstack.add_wear) == "function" then
                 itemstack:add_wear(65535 / 45) 
@@ -156,4 +134,4 @@ for tier, data in ipairs(wand_tiers) do
     })
 end
 
-print("[Techblox Modpack] Earth Wands initialized with absolute naming protection and exact textures!")
+print("[Techblox Modpack] Earth Wands successfully loaded via dynamic visual swaps!")
