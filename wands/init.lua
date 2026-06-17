@@ -16,40 +16,49 @@ minetest.register_node("techblox:magic_stone", {
 })
 
 -- 2. WAND CONFIGURATION TUNING (THE THREE TIERS)
+-- Updated with exact custom dimensional bounds requested:
 local wand_tiers = {
     [1] = {
         name = "techblox:earth_wand_t1",
         description = "Techblox Earth Wand (Tier 1)",
         texture = "techblox_wand_earth_t1.png",
-        radius = 1, -- 3x3 platform
-        height = 2, -- Rises 2 blocks
+        width = 2,  -- 2x2 platform
+        height = 5, -- Rises 5 blocks
     },
     [2] = {
         name = "techblox:earth_wand_t2",
         description = "Techblox Earth Wand (Tier 2)",
         texture = "techblox_wand_earth_t2.png",
-        radius = 2, -- 5x5 platform
+        width = 3,  -- 3x3 platform
         height = 4, -- Rises 4 blocks
     },
     [3] = {
         name = "techblox:earth_wand_t3",
         description = "Techblox Earth Wand (Tier 3)",
         texture = "techblox_wand_earth_t3.png",
-        radius = 3, -- 7x7 platform
-        height = 6, -- Rises 6 blocks
+        width = 5,  -- 5x5 platform
+        height = 5, -- Rises 5 blocks
     },
 }
 
 -- 3. LAG-FREE STAGGERED GENERATION LAYER FUNCTION
-local function build_platform_layer(pos, radius, current_layer, max_height, display_texture)
+local function build_platform_layer(pos, width, current_layer, max_height, display_texture)
     -- Safety check for position data
     if not pos or not pos.y then return end
     if current_layer > max_height then return end
 
     local center_y = pos.y + current_layer
 
-    for dx = -radius, radius do
-        for dz = -radius, radius do
+    -- Handle coordinate offsets mathematically for both even (2x2) and odd (3x3, 5x5) dimensions
+    local min_offset = -math.floor(width / 2)
+    local max_offset = math.ceil(width / 2) - 1
+    if width % 2 ~= 0 then
+        min_offset = -math.floor(width / 2)
+        max_offset = math.floor(width / 2)
+    end
+
+    for dx = min_offset, max_offset do
+        for dz = min_offset, max_offset do
             local target_pos = {x = pos.x + dx, y = center_y, z = pos.z + dz}
             local node = minetest.get_node_or_nil(target_pos)
             
@@ -59,18 +68,9 @@ local function build_platform_layer(pos, radius, current_layer, max_height, disp
                 -- Construct the node safely
                 minetest.set_node(target_pos, {name = "techblox:magic_stone"})
                 
-                -- Apply the dynamically captured texture using the Node Meta-system
-                -- Swap tile[1] (top face) or all faces to mimic the target block seamlessly
-                local meta = minetest.get_meta(target_pos)
-                if meta then
-                    -- Store texture info if needed for advanced interactions,
-                    -- but swap the visual using a node parameter swap or parametric definitions
-                end
-                
-                -- For true tile-switching without modifying definitions on the fly, 
-                -- Luanti supports setting a localized tile via node timers or swapping to specialized 
-                -- dynamic nodes. To keep performance optimal and zero-lag:
-                -- We use swap_node if variation definitions exist, otherwise it relies on the fallback definition.
+                -- Note: To fully apply the dynamically matched texture 'display_texture' on a single node 
+                -- definition without registration bloating, look into utilizing metadata-driven tile hacks 
+                -- or node variant definitions standard in your techblox ecosystem.
             end
         end
     end
@@ -79,7 +79,7 @@ local function build_platform_layer(pos, radius, current_layer, max_height, disp
     minetest.sound_play("default_cool_lava", {pos = pos, gain = 0.3, max_hear_distance = 12}, true)
 
     -- Stagger next layer execution by 0.15 seconds to eliminate engine spike lag
-    minetest.after(0.15, build_platform_layer, pos, radius, current_layer + 1, max_height, display_texture)
+    minetest.after(0.15, build_platform_layer, pos, width, current_layer + 1, max_height, display_texture)
 end
 
 -- 4. DYNAMIC TEXTURE EXTRACTION LOGIC WITH SAFE FALLBACKS
@@ -138,8 +138,8 @@ for tier, data in ipairs(wand_tiers) do
             -- Base coordinate computation
             local start_pos = {x = clicked_pos.x, y = clicked_pos.y, z = clicked_pos.z}
             
-            -- Launch building sequence
-            build_platform_layer(start_pos, data.radius, 1, data.height, target_texture)
+            -- Launch building sequence passing width data parameters
+            build_platform_layer(start_pos, data.width, 1, data.height, target_texture)
             
             -- Fail-safe 4: Check if itemstack handles wear cleanly before reducing durability
             if itemstack and type(itemstack.add_wear) == "function" then
@@ -151,4 +151,4 @@ for tier, data in ipairs(wand_tiers) do
     })
 end
 
-print("[Techblox Modpack] Earth Wands component initialized successfully with total nil protection!")
+print("[Techblox Modpack] Earth Wands component initialized successfully with custom grid sizes!")
