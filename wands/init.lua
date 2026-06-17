@@ -22,28 +22,36 @@ minetest.register_node("techblox:magic_stone", {
 })
 
 -- 2. DYNAMIC REGISTRY: GENERATE UNBREAKABLE CLONES OF ALL KNOWN NODES AT STARTUP
--- This maps every block texture to an unbreakable "techblox:magic_stone_..." variant.
 local facade_registry = {}
 
 minetest.register_on_mods_loaded(function()
     for node_name, def in pairs(minetest.registered_nodes) do
-        if node_name ~= "air" and node_name ~= "ignore" and def.tiles then
-            local facade_name = "techblox:magic_" .. node_name:gsub(":", "_")
+        -- Deep safety nil checks for broken node entries
+        if def and type(def) == "table" and def.tiles and type(def.tiles) == "table" and node_name ~= "air" and node_name ~= "ignore" then
             
-            -- Clone original visuals but strip out all drops, mining groups, and diggability
-            minetest.register_node(facade_name, {
-                description = "Magic " .. (def.description or "Stone"),
-                tiles = def.tiles, -- EXACT texture match (Top, bottom, sides all mirror perfectly)
-                drawtype = def.drawtype or "normal",
-                paramtype = def.paramtype,
-                paramtype2 = def.paramtype2,
-                groups = {immobile = 1},
-                diggable = false, -- Locked down so players cannot break or dupe it
-                floodable = false,
-                sounds = safe_stone_sounds,
-            })
+            -- RIGID STRIP FIX: Force everything to lowercase and delete ALL symbols/underscores.
+            -- This changes "moreblocks:panel_brick_4" into "moreblockspanelbrick4"
+            -- Outfits a 100% legal node string: "techblox:magic_moreblockspanelbrick4"
+            local ultra_clean = node_name:lower():gsub("[^a-z0-9]", "")
+            local facade_name = "techblox:magic_" .. ultra_clean
             
-            facade_registry[node_name] = facade_name
+            -- Make sure it hasn't somehow already been registered to avoid duplicate entries
+            if not minetest.registered_nodes[facade_name] then
+                -- Clone original visuals but strip out all drops, mining groups, and diggability
+                minetest.register_node(facade_name, {
+                    description = "Magic " .. (def.description or "Stone"),
+                    tiles = def.tiles, -- EXACT texture match
+                    drawtype = def.drawtype or "normal",
+                    paramtype = def.paramtype,
+                    paramtype2 = def.paramtype2,
+                    groups = {immobile = 1},
+                    diggable = false, -- Locked down so players cannot break or dupe it
+                    floodable = false,
+                    sounds = safe_stone_sounds,
+                })
+                
+                facade_registry[node_name] = facade_name
+            end
         end
     end
 end)
@@ -148,4 +156,4 @@ for tier, data in ipairs(wand_tiers) do
     })
 end
 
-print("[Techblox Modpack] Earth Wands initialized with exact texture mirroring facades!")
+print("[Techblox Modpack] Earth Wands initialized with absolute naming protection and exact textures!")
