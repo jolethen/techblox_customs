@@ -1,51 +1,59 @@
 -- ==========================================================================
 -- TECHBLOX EARTH WANDS COMPONENT
 -- Features: 3 Tiers, Progressive Building, Anti-Lag, Anti-Duplication,
---           EXACT Metadata Texture Injection, and Auto-Despawn Timers.
+--           EXACT Texture Clones, and Top-to-Bottom Staggered Despawning.
 -- ==========================================================================
 
--- 1. REGISTER THE BASE UNBREAKABLE PLATFORM NODE
+local safe_stone_sounds = {
+    footstep = {name = "default_hard_footstep", gain = 0.2},
+    dug = {name = "default_dug_node", gain = 0.5},
+    place = {name = "default_place_node", gain = 0.5},
+}
+
+-- 1. BASE PLATFORM FALLBACK
 minetest.register_node("techblox:magic_stone", {
     description = "Magic Earth Stone",
-    tiles = {"default_stone.png"}, -- Fallback base texture
-    groups = {immobile = 1, magic_structure = 1}, -- Added 'magic_structure' for easy tracking
+    tiles = {"default_stone.png"}, 
+    groups = {immobile = 1, magic_wand_block = 1},       
     diggable = false,              
     floodable = false,
-    sounds = {
-        footstep = {name = "default_hard_footstep", gain = 0.2},
-        dug = {name = "default_dug_node", gain = 0.5},
-        place = {name = "default_place_node", gain = 0.5},
-    },
-    
-    -- When the block is placed, set up its initialization defaults
-    on_construct = function(pos)
-        local meta = minetest.get_meta(pos)
-        meta:set_int("spawn_time", os.time()) -- Track exactly when it was generated
-    end,
+    sounds = safe_stone_sounds,
 })
 
--- 2. DESPAWN CONTROLLER (AUTOMATIC TIMED REMOVAL)
--- Checks all 'magic_structure' blocks every second and turns them to air after 15 seconds
-minetest.register_abm({
-    label = "Magic Stone Despawn Loop",
-    nodenames = {"techblox:magic_stone"},
-    interval = 1.0, -- Run checks every second
-    chance = 1,     -- 100% execution rate
-    action = function(pos, node, active_object_count, active_object_count_wider)
-        local meta = minetest.get_meta(pos)
-        if not meta then return end
-        
-        local spawn_time = meta:get_int("spawn_time") or 0
-        local current_time = os.time()
-        
-        -- Despawn limit: 15 seconds (Change this number to make it stay shorter/longer)
-        if (current_time - spawn_time) >= 15 then
-            minetest.remove_node(pos)
-            -- Play a subtle crumbling/fading sound at the position
-            minetest.sound_play("default_cool_lava", {pos = pos, gain = 0.1, max_hear_distance = 8}, true)
+-- 2. DYNAMIC REGISTRY: FILTERED EXACT CLONE GENERATOR
+-- Safely registers custom unbreakable facades for actual map blocks only
+local facade_registry = {}
+
+minetest.register_on_mods_loaded(function()
+    for node_name, def in pairs(minetest.registered_nodes) do
+        -- STRICT FILTER: Only clone normal solid blocks that have valid textures
+        if def and type(def) == "table" and def.tiles and type(def.tiles) == "table" 
+           and node_name ~= "air" and node_name ~= "ignore" 
+           and not node_name:find("liquid") and not node_name:find("water") 
+           and not node_name:find("lava") and not node_name:find("fire") then
+            
+            -- Strip out colons/symbols completely to stop prefix convention crashes
+            local ultra_clean = node_name:lower():gsub("[^a-z0-9]", "")
+            local facade_name = "techblox:magic_" .. ultra_clean
+            
+            if not minetest.registered_nodes[facade_name] then
+                minetest.register_node(facade_name, {
+                    description = "Magic " .. (def.description or "Block"),
+                    tiles = def.tiles, -- EXACT visual match
+                    drawtype = def.drawtype or "normal",
+                    paramtype = def.paramtype,
+                    paramtype2 = def.paramtype2,
+                    groups = {immobile = 1, magic_wand_block = 1}, -- Grouped for deletion tracker
+                    diggable = false, 
+                    floodable = false,
+                    sounds = safe_stone_sounds,
+                })
+                
+                facade_registry[node_name] = facade_name
+            end
         end
-    end,
-})
+    end
+end)
 
 -- 3. WAND CONFIGURATION TUNING (THE THREE TIERS)
 local wand_tiers = {
@@ -72,14 +80,41 @@ local wand_tiers = {
     },
 }
 
--- 4. LAG-FREE STAGGERED GENERATION LAYER FUNCTION WITH EXACT TEXTURE INJECTION
-local function build_platform_layer(pos, width, current_layer, max_height, target_texture)
-    if not pos or not pos.y or not target_texture then return end
-    if current_layer > max_height then return end
+-- 4. REVERSE STAGGERED TOP-TO-BOTTOM DESPAWN FUNCTION
+local function despawn_platform_layer(layer_map, current_layer)
+    if current_layer < 1 then return end -- Done dissolving
+
+    local blocks_to_remove = layer_map[current_layer]
+    if blocks_to_remove then
+        for _, pos in ipairs(blocks_to_remove) do
+            local current_node = minetest.get_node(pos)
+            -- Verify it's still one of our magic structure blocks before clearing
+            if minetest.get_item_group(current_node.name, "magic_wand_block") > 0 then
+                minetest.remove_node(pos)
+            end
+        end
+        -- Optional: Play a quiet fading sound per layer collapse
+        if #blocks_to_remove > 0 then
+            minetest.sound_play("default_cool_lava", {pos = blocks_to_remove[1], gain = 0.1, max_hear_distance = 10}, true)
+        end
+    end
+
+    -- Wait 0.25 seconds, then dissolve the next layer down
+    minetest.after(0.25, despawn_platform_layer, layer_map, current_layer - 1)
+end
+
+-- 5. PROGRESSIVE BUILDING LAYER FUNCTION
+local function build_platform_layer(pos, width, current_layer, max_height, facade_node, layer_map)
+    if not pos or not pos.y then return end
+    if current_layer > max_height then
+        -- Structure building complete! Wait 10 seconds, then start top-to-bottom removal
+        minetest.after(10.0, despawn_platform_layer, layer_map, max_height)
+        return 
+    end
 
     local center_y = pos.y + current_layer
+    layer_map[current_layer] = {} -- Track nodes for this exact height row
 
-    -- Mathematical offset mapping for flawless grids
     local min_offset = -math.floor(width / 2)
     local max_offset = math.ceil(width / 2) - 1
     if width % 2 ~= 0 then
@@ -93,25 +128,20 @@ local function build_platform_layer(pos, width, current_layer, max_height, targe
             local node = minetest.get_node_or_nil(target_pos)
             
             if node and (node.name == "air" or node.name == "default:water_source" or node.name == "default:water_flowing") then
-                -- Step A: Set the single unbreakable base block
-                minetest.set_node(target_pos, {name = "techblox:magic_stone"})
-                
-                -- Step B: Force inject the targeted texture via metadata strings
-                local meta = minetest.get_meta(target_pos)
-                if meta then
-                    -- Engine override hack to load a completely dynamic tile display string cleanly
-                    meta:set_string("tileimages", target_texture)
-                    meta:set_int("spawn_time", os.time()) -- Refresh timestamp anchor
-                end
+                minetest.set_node(target_pos, {name = facade_node})
+                -- Log coordinates into our tier structure tracker
+                table.insert(layer_map[current_layer], target_pos)
             end
         end
     end
 
     minetest.sound_play("default_cool_lava", {pos = pos, gain = 0.3, max_hear_distance = 12}, true)
-    minetest.after(0.15, build_platform_layer, pos, width, current_layer + 1, max_height, target_texture)
+    
+    -- Keep building upward row by row
+    minetest.after(0.15, build_platform_layer, pos, width, current_layer + 1, max_height, facade_node, layer_map)
 end
 
--- 5. REGISTRATION LOOP FOR THE WANDS
+-- 6. TOOL REGISTRATION LOOP
 for tier, data in ipairs(wand_tiers) do
     minetest.register_tool(data.name, {
         description = data.description,
@@ -135,23 +165,14 @@ for tier, data in ipairs(wand_tiers) do
                 return itemstack 
             end
             
-            -- Extract the exact first texture file name from the clicked block
-            local source_def = minetest.registered_nodes[clicked_node.name]
-            local target_texture = "default_stone.png" -- Fallback
-            
-            if source_def and source_def.tiles then
-                local tile = source_def.tiles[1]
-                if type(tile) == "string" then
-                    target_texture = tile
-                elseif type(tile) == "table" and tile.name then
-                    target_texture = tile.name
-                end
-            end
-            
+            -- Identify visual facade or use base magic stone fallback
+            local facade_node = facade_registry[clicked_node.name] or "techblox:magic_stone"
             local start_pos = {x = clicked_pos.x, y = clicked_pos.y, z = clicked_pos.z}
             
-            -- Fire builder sequence with the literal file string passed directly down
-            build_platform_layer(start_pos, data.width, 1, data.height, target_texture)
+            -- Initialize tracking table to isolate this specific platform setup
+            local layer_map = {}
+            
+            build_platform_layer(start_pos, data.width, 1, data.height, facade_node, layer_map)
             
             if itemstack and type(itemstack.add_wear) == "function" then
                 itemstack:add_wear(65535 / 45) 
@@ -162,4 +183,4 @@ for tier, data in ipairs(wand_tiers) do
     })
 end
 
-print("[Techblox Modpack] Earth Wands updated: Dynamic textures and auto-despawn timers functional!")
+print("[Techblox Modpack] Earth Wands optimized: Exact textures matching with top-to-bottom decay!")
