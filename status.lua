@@ -13,9 +13,11 @@ minetest.override_chatcommand("status", {
         local seconds = uptime_sec % 60
         local uptime_str = string.format("%dh %dm %ds", hours, minutes, seconds)
         
-        -- 3. Fetch Real-time Max Lag
-        -- minetest.get_stats().max_lag returns the highest lag spike in seconds
-        local max_lag = minetest.get_stats().max_lag or 0.00
+        -- 3. Fetch Real-time Max Lag (FIXED)
+        -- Pulls the engine's default status string and extracts max_lag via pattern match
+        local server_status = minetest.get_server_status() or ""
+        local max_lag_raw = string.match(server_status, "max_lag%s*=%s*([%d%.]+)")
+        local max_lag = tonumber(max_lag_raw) or 0.00
         local lag_str = string.format("%.2fs", max_lag)
 
         -- 4. Efficient Player Name Extraction
